@@ -7,8 +7,8 @@ on:
     branches: [ main ]
 
 permissions:
-  packages: write
-  contents: read
+  packages: admin
+  contents: admin
 
 jobs:
   build:
@@ -26,4 +26,4 @@ jobs:
     - name: Build NuGet Package
       run: dotnet build --configuration Release
     - name: Publish NuGet Package to Github
-      run: dotnet nuget push ${{github.workspace}}/bin/Release/*.nupkg -s "https://nuget.pkg.github.com/roman015/index.json" --username roman015 --password ${{ secrets.GITHUB_TOKEN }}
+      run: dotnet nuget push ${{github.workspace}}/bin/Release/*.nupkg -s "https://nuget.pkg.github.com/roman015/index.json" -k ${{ secrets.GITHUB_TOKEN }}
