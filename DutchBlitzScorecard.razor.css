@@ -1,0 +1,24 @@
+﻿.score-input {
+    width: 4em;
+    text-align:center;
+}
+
+.TotalScoreDisplay {
+    width: 100% !important;
+}
+
+.player-name-input, .TotalScoreDisplay {
+    color: white;
+    font-weight: bold;
+    width: 10em;
+}
+
+
+.dutch-blitz-input {
+    text-align: center;
+    font-size: small;
+}
+
+.total-input{
+    text-align:center;
+}

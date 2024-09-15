@@ -1,0 +1,803 @@
+﻿@page "/DutchBlitz"
+@using ChartJs.Blazor.BarChart.Axes
+@using ChartJs.Blazor.LineChart
+@using ChartJs.Blazor.BarChart
+
+@inject IJSRuntime JSRuntime
+@inject ISyncLocalStorageService localStorage
+
+<div class="dutch-blitz-scorecard-component">
+    <h1>Dutch Blitz Scorecard</h1>
+
+    <ul class="nav nav-pills justify-content-center mb-3" id="pills-tab" role="tablist">
+        <li class="nav-item" role="presentation">
+            <a class="nav-link active" id="pills-score-tab" data-toggle="pill" data-target="#pills-Score" role="tab" aria-controls="pills-Score" aria-selected="true">Score</a>
+        </li>
+        <li class="nav-item" role="presentation">
+            <a class="nav-link" id="pills-graph-tab" data-toggle="pill" data-target="#pills-Graph" role="tab" aria-controls="pills-Graph" aria-selected="false" @onclick="(() => RefreshGraphData())">Graph</a>
+        </li>
+        <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle" data-toggle="dropdown" href="#" role="button" aria-haspopup="true" aria-expanded="false">Options</a>
+            <div class="dropdown-menu dropdown-menu-right">
+                <a class="dropdown-item" href="javascript:void(0);" onclick="$('#PlayerModal').modal('show')">Set Player Names</a>
+
+                <div class="dropdown-divider"></div>
+
+                @if(CurrScoreCountStyle == ScoreCountStyle.TotalScoreOnlyStyle)
+                {
+                    <a class="dropdown-item" href="javascript:void(0);" @onclick="(() => CurrScoreCountStyle = ScoreCountStyle.BlitzNDutchStyle)"
+                        title="Dutch is the pile that everyone adds cards to. Blitz is the pile each player is trying to finish in each round.">
+                        <span class="font-weight-bold">Display</span> Dutch & Blitz Count
+                    </a>
+                }
+                else
+                {
+                    <a class="dropdown-item" href="javascript:void(0);" @onclick="(() => CurrScoreCountStyle = ScoreCountStyle.TotalScoreOnlyStyle)"
+                        title="Keep track of the total score only.">
+                        <span class="font-weight-bold">Hide</span> Dutch & Blitz Count
+                    </a>
+                }
+                
+                <div class="input-group px-3 pt-1" 
+                    title="Set the target score for the game. Leave it at 75 unless you want a quicker or longer game. Double Click to Reset value."
+                    @ondblclick="(() => targetScore = 75)"
+                     @onkeyup="(() => StoreScoreOffline())">
+                    <div class="input-group-prepend">
+                        <span class="input-group-text" id="basic-addon1">Target Score</span>
+                    </div>
+                    <input type="number" step="1" class="form-control" placeholder="Target Score" @bind="targetScore" />                    
+                </div>       
+
+                <div class="dropdown-divider"></div>
+              
+                <a class="dropdown-item" href="javascript:void(0);" 
+                    @onclick="(() => ResetScores())" title="Clears the scoreboard. Player names are left intact.">
+                    Reset Score
+                </a>
+                <a class="dropdown-item" href="javascript:void(0);" 
+                    @onclick="(() => NewGame())" title="Removes all Players and clears the scoreboard.">
+                    New Game
+                </a>               
+            </div>
+        </li>        
+    </ul>
+
+    <div class="tab-content" id="pills-tabContent">
+        
+        <div class="tab-pane fade show active" id="pills-Score" role="tabpanel" aria-labelledby="pills-score-tab">
+            <div class="table-responsive">
+                <table id="dutchBlitz-scorecard" class="table table-striped table-bordered w-auto" @onkeyup="(() => StoreScoreOffline())">
+                    <thead class="thead-dark">
+                        <tr>
+                            <th>&nbsp;</th>
+                            @for (int currPlayerIdx = 0; currPlayerIdx < players.Count; currPlayerIdx++)
+                            {
+                                var currPlayer = players[currPlayerIdx];
+
+                                if (IsGameOver && currPlayer.TotalScore == HighestScore)
+                                {
+                                    <th>
+                                        <div class="row">
+                                            <div class="col-12 text-center">
+                                                <span>👑</span>
+                                            </div>
+                                        </div>
+                                        <div class="row">
+                                            <div class="col-12">
+                                                <div class="d-flex justify-content-center">
+                                                    <input type="text" class="form-control-plaintext player-name-input text-center" @bind="@currPlayer.Name" />
+                                                </div>
+                                            </div>
+                                        </div>                                                                                
+                                    </th>
+                                }
+                                else
+                                {
+                                    <th>
+                                        <div class="d-flex justify-content-center">
+                                            <input type="text" class="form-control-plaintext player-name-input text-center" @bind="@currPlayer.Name" />
+                                        </div>
+                                    </th>
+                                }                            
+                            }   
+                        </tr>
+                        <tr>
+                            <th>
+                                <div class="d-flex justify-content-center">
+                                    Round #
+                                </div>
+                            </th>
+                            @for (int currPlayerIdx = 0; currPlayerIdx < players.Count; currPlayerIdx++)
+                            {
+                                var currPlayer = players[currPlayerIdx];
+
+                                <th>
+                                    <div class="d-flex justify-content-center">
+                                        <input type="number" step="1" readonly class="form-control-plaintext score-input TotalScoreDisplay" value="@currPlayer.TotalScore" />
+                                    </div>
+                                </th>
+                            }
+                        </tr>
+                    </thead>
+                    <tbody>                        
+                        @for (currRoundIdx = 0, currTabindex = 1000; currRoundIdx < totalRounds; currRoundIdx++)
+                        {
+                            int currRound = currRoundIdx;
+                            <tr>
+                                <td class="align-middle">
+                                    <div class="d-flex justify-content-center font-weight-bold">
+                                        @(currRound + 1)
+                                    </div> 
+                                </td>
+                                @for (int currPlayerIdx = 0; currPlayerIdx < players.Count; currPlayerIdx++)
+                                {
+                                    var currIdx = currPlayerIdx;
+                                    var currPlayer = players[currIdx];
+
+                                    @if(currIdx == 0 && currRound == totalRounds - 1)
+                                    {
+                                        lastRowFirstInputTabIndex = currTabindex;
+                                    }
+
+                                    @if(CurrScoreCountStyle == ScoreCountStyle.TotalScoreOnlyStyle)
+                                    {
+                                        <td onclick="this.querySelector('input').focus();">
+                                            <div class="d-flex justify-content-center">
+                                                <input type="number" step="1" tabindex="@(currTabindex++)" class="form-control-plaintext score-input font-weight-bold" @bind="currPlayer.Scores[currRound].Total" />
+                                            </div>
+                                        </td>
+                                    }
+                                    else
+                                    {
+                                        @* It's ScoreCountStyle.BlitzNDutchStyle *@
+                                        <td>                                            
+                                            <div class="container border">
+                                                <div class="row">
+                                                    <div class="col-6 border-right blitz-dutch-input">
+                                                        <div class="container px-0">
+                                                            <div class="row border-bottom" onclick="this.querySelector('input').focus();">
+                                                                <div class="col-12 px-0">
+                                                                    <input type="number" step="1" class="form-control-plaintext dutch-blitz-input" tabindex="@(currTabindex+0)"
+                                                                           placeholder="Dutch" title="Number of cards in Dutch Pile. +1 is added for each card to Total."
+                                                                           @bind="currPlayer.Scores[currRound].DutchCount" @bind:event="oninput" />
+                                                                </div>                                                                
+                                                            </div>
+                                                            <div class="row" onclick="this.querySelector('input').focus();">
+                                                                <div class="col-12 px-0">
+                                                                    <input type="number" step="1" class="form-control-plaintext dutch-blitz-input" tabindex="@(currTabindex+1)"
+                                                                           placeholder="Blitz" title="Number of cards in Blitz Pile. -2 is added for each card to Total."
+                                                                           @bind="currPlayer.Scores[currRound].BlitzCount" @bind:event="oninput" />
+                                                                </div>
+                                                            </div>
+                                                        </div>                                                                                                                
+                                                    </div>
+                                                    <div class="col-6 total-input" onclick="this.querySelector('input').focus();">
+                                                        <div class="container px-0 h-100">
+                                                            <div class="row h-100">
+                                                                <div class="col-12 px-0">
+                                                                    <input type="number" step="1" class="form-control-plaintext font-weight-bold total-input h-100" tabindex="@(currTabindex+2)"
+                                                                           placeholder="Total" title="Total = Dutch - (2 x Blitz)"
+                                                                           @bind="currPlayer.Scores[currRound].Total" @bind:event="oninput" />
+                                                                </div>                                                                
+                                                            </div>
+                                                        </div>                                                        
+                                                    </div>
+                                                </div>
+                                                @{
+                                                    currTabindex += 3;
+                                                }
+                                            </div>                                                                                            
+                                        </td>
+                                    }
+                                    
+                                }
+                            </tr>                        
+                        }
+                        @if(players.Count > 0)
+                        {
+                            <tr>
+                                <td class="align-middle">
+                                    <div class="d-flex justify-content-center font-weight-bold">
+                                        @if (totalRounds < roundLimit)
+                                        {
+                                            <button class="btn btn-success" tabindex="@(currTabindex++)" @onclick="(() => AddRound())">
+                                                Next Round
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <button class="btn btn-success" tabindex="@(currTabindex++)" disabled title="System Limit Reached">
+                                                Next Round
+                                            </button>
+                                        }
+                                    </div>
+                                </td>
+                                <td colspan="@players.Count">
+                                    @if (IsGameOver)
+                                    {
+                                        <div class="font-weight-bold">
+                                            <button class="btn btn-primary" tabindex="@(currTabindex++)" @onclick="(() => ResetScores())">
+                                                Reset <br/> 
+                                                Score
+                                            </button>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <span>&nbsp;</span>
+                                    }                                    
+                                </td>
+                            </tr>
+                        }                        
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="tab-pane fade" id="pills-Graph" role="tabpanel" aria-labelledby="pills-graph-tab">
+            <div class="container">
+                <div class="row">
+                    <div class="col-12">
+                        <Chart Config="_scoreConfig" @ref="_scoreChart"></Chart>
+                    </div>
+                    
+                    <div class="col-12 @((CurrScoreCountStyle == ScoreCountStyle.BlitzNDutchStyle) ? string.Empty : "d-none")">
+                        <Chart Config="_dutchConfig" @ref="_dutchChart"></Chart>
+                    </div>                                        
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="PlayerModal" data-backdrop="static" tabindex="-1" role="dialog" aria-labelledby="WordleModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="PlayerLabel">Player Names</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="container-fluid">
+                        <div class="row">
+                            <div class="col-12 mb-3">
+                                <p>Use ENTER & COMMA to input multiple players. Whitespaces will be removed automatically.</p>
+                                <p>Example : "Tim, Dave, Harold [↲]" or "Tim [↲] Dave [↲] Harold [↲]"</p>
+                            </div>
+                            <div class="col-12 mb-3">
+                                <div class="row">
+                                    <div class="col-3">
+                                        <div class="col-form-label">
+                                            Player Name(s) :
+                                        </div>
+                                    </div>
+                                    <div class="col-9">
+                                        @if(players.Count < playerLimit)
+                                        {
+                                            <div class="input-group">
+                                                <input class="form-control" type="text" name="playerNamesInputText" @bind="playerNamesInputText" @onkeyup="@((e) => OnKeyUp(e))" />
+                                                <div class="input-group-append">
+                                                    <button class="btn btn-outline-secondary" type="button" @onclick="(() => AddPlayersFromInput())">
+                                                        <span>Add</span>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        }         
+                                        else
+                                        {
+                                            <div class="input-group">
+                                                <input class="form-control" type="text" name="playerNamesInputText" disabled title="Player Limit Reached." />
+                                                <div class="input-group-append">
+                                                    <button class="btn btn-outline-secondary" type="button" disabled title="Player Limit Reached.">
+                                                        <span>Add</span>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row" style="max-height:50vh; overscroll-behavior-y:auto">
+                            @for (int currPlayerIdx = 0; currPlayerIdx < players.Count; currPlayerIdx++)
+                            {
+                                int currIdx = currPlayerIdx;
+                                var currPlayer = players[currPlayerIdx];
+                                <div class="col-12 mb-3">                                
+                                    <div class="row">
+                                        <div class="col-6">
+                                            <input type="text" class="form-control-plaintext" @bind="@currPlayer.Name" />
+                                        </div>
+                                        <div class="col-6">
+                                            <div class="btn-group">
+                                                @if (currIdx == 0)
+                                                {
+                                                    <button class="btn btn-primary">
+                                                        <span class="px-1">↑</span>
+                                                    </button>
+                                                }
+                                                else
+                                                {
+                                                    <button class="btn btn-primary" @onclick="(() => MovePlayerUp(currIdx))">
+                                                        <span class="px-1">↑</span>
+                                                    </button>
+                                                }
+                                                @if (currIdx == players.Count - 1)
+                                                {
+                                                    <button class="btn btn-primary">
+                                                        <span class="px-1">↓</span>
+                                                    </button>
+                                                }
+                                                else
+                                                {
+                                                    <button class="btn btn-primary" @onclick="(() => MovePlayerDown(currIdx))">
+                                                        <span class="px-1">↓</span>
+                                                    </button>
+                                                }
+
+                                                <button class="btn btn-primary" @onclick="(() => DeletePlayer(currIdx))">
+                                                    <span class="px-1">❌</span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+@code {
+    int roundLimit = 1000;
+    int playerLimit = 100;
+    enum ScoreCountStyle { TotalScoreOnlyStyle, BlitzNDutchStyle };
+
+    ScoreCountStyle CurrScoreCountStyle = ScoreCountStyle.TotalScoreOnlyStyle;
+
+    List<Player> players = new List<Player>();
+
+    int targetScore = 75;
+    bool IsGameOver => players.Count == 0 ? false : players.Any(player => player.TotalScore >= targetScore);
+    int HighestScore => players.Count == 0 ? -1 : players.Select(player => player.TotalScore).Max();
+
+    int totalRounds = 1;
+
+    string playerNamesInputText = "";
+
+    int currTabindex, currRoundIdx;
+
+    private string DutchBlitzJSUrl = "/_content/RazorDutchBlitzScorecard/js/DutchBlitz.js";
+    IJSObjectReference? jsDutchBlitzModule;
+    int lastRowFirstInputTabIndex;
+    bool focusSwitchRequired = false;
+
+    private string OfflineKey = "DutchBlitzOffline";
+    private string OfflineRoundsKey = "DutchBlitzRoundsOffline";
+    private string OfflineTargetKey = "DutchBlitzTargetOffline";
+    private string OfflineScoreCountStyleKey = "DutchBlitzScoreCountStyleOffline";
+
+    private LineConfig? _scoreConfig;
+    private Chart? _scoreChart;
+    private BarConfig? _dutchConfig;
+    private Chart? _dutchChart;
+    List<System.Drawing.Color> lightColors = new List<System.Drawing.Color>()
+    {
+        System.Drawing.Color.Green,        
+        System.Drawing.Color.Blue,
+        System.Drawing.Color.Red,        
+        System.Drawing.Color.Cyan,
+        System.Drawing.Color.Magenta,        
+        System.Drawing.Color.Orange,
+        System.Drawing.Color.Turquoise,
+        System.Drawing.Color.Goldenrod,
+        System.Drawing.Color.Violet,
+        System.Drawing.Color.Olive,
+        System.Drawing.Color.Khaki,
+        System.Drawing.Color.Salmon,
+        System.Drawing.Color.Silver
+    };
+    List<System.Drawing.Color> darkColors = new List<System.Drawing.Color>()
+    {
+        System.Drawing.Color.DarkGreen,
+        System.Drawing.Color.DarkBlue,
+        System.Drawing.Color.DarkRed,
+        System.Drawing.Color.DarkCyan,
+        System.Drawing.Color.DarkMagenta,
+        System.Drawing.Color.DarkOrange,
+        System.Drawing.Color.DarkTurquoise,
+        System.Drawing.Color.DarkGoldenrod,
+        System.Drawing.Color.DarkViolet,
+        System.Drawing.Color.DarkOliveGreen,
+        System.Drawing.Color.DarkKhaki,
+        System.Drawing.Color.DarkSalmon,
+        System.Drawing.Color.DarkGray
+    };
+
+    protected override void OnInitialized()
+    {        
+        if (!localStorage.ContainKey(OfflineKey))
+        {
+            NewGame();
+        }
+        else
+        {
+            try
+            {
+                var jsonString = localStorage.GetItemAsString(OfflineKey);
+                var deserialized = JsonSerializer.Deserialize<Player[]>(jsonString);
+
+                if(deserialized == null)
+                {
+                    throw new ArgumentNullException(OfflineKey + " : returned null");
+                }
+                else
+                {
+                    players = (deserialized ?? new Player[] { }).ToList();
+                    totalRounds = JsonSerializer.Deserialize<int>(localStorage.GetItemAsString(OfflineRoundsKey));
+                    targetScore = JsonSerializer.Deserialize<int>(localStorage.GetItemAsString(OfflineTargetKey));
+                    CurrScoreCountStyle = JsonSerializer.Deserialize<ScoreCountStyle>(localStorage.GetItemAsString(OfflineScoreCountStyleKey));
+                }                
+            }
+            catch(Exception e)
+            {
+                Console.WriteLine(e.Message);
+                localStorage.RemoveItem(OfflineKey);
+
+                NewGame();
+            }
+
+        }
+
+        RefreshGraphData();
+
+        base.OnInitialized();
+    }  
+
+    void RefreshGraphData()
+    {
+        RefreshScoreGraph();
+        RefreshDutchGraph();
+    }
+
+    void RefreshDutchGraph()
+    {
+        Console.WriteLine("RefreshDutchGraph start");
+        if (_dutchConfig == null)
+        {
+            _dutchConfig = new BarConfig(horizontal:false)
+            {
+                Options = new BarOptions
+                {                    
+                    Responsive = true,
+                    Title = new OptionsTitle
+                    {
+                        Display = true,
+                        Text = "Dutch/Blitz Cards Count"
+                    },
+                    Tooltips = new Tooltips
+                    {
+                        Mode = InteractionMode.Nearest,
+                        Intersect = true
+                    },
+                    Hover = new Hover
+                    {
+                        Mode = InteractionMode.Nearest,
+                        Intersect = true
+                    },
+                    Scales = new BarScales()
+                    {
+                            XAxes = new List<CartesianAxis>
+                            {
+                                new BarCategoryAxis
+                                {
+                                    Stacked = true
+                                }
+                            },
+                                    YAxes = new List<CartesianAxis>
+                            {
+                                new BarLinearCartesianAxis
+                                {
+                                    Stacked = true
+                                }
+                            }
+                    },
+                    Legend = new Legend()
+                    {
+                        Display = false
+                    }
+                }
+            };
+        }
+
+        Console.WriteLine("RefreshDutchGraph x axis label");
+        // X Axis Labels        
+        _dutchConfig.Data.Labels.Clear();
+        foreach (var label in System.Linq.Enumerable.Range(1, totalRounds).Select(item => item.ToString()))
+        {
+            _dutchConfig.Data.Labels.Add(label);
+        }
+
+        Console.WriteLine("RefreshDutchGraph datasets");
+        _dutchConfig.Data.Datasets.Clear();
+        var dutchColorEnum = lightColors.GetEnumerator();        
+        var blitzColorEnum = darkColors.GetEnumerator();
+        foreach (var player in players)
+        {
+            BarDataset<int> dutchDataset = new BarDataset<int>();            
+            BarDataset<int> blitzDataset = new BarDataset<int>();
+
+            dutchColorEnum.MoveNext();            
+            dutchDataset.BorderColor = ColorUtil.FromDrawingColor(System.Drawing.Color.Black);
+            dutchDataset.BackgroundColor = ColorUtil.FromDrawingColor(dutchColorEnum.Current);
+            dutchDataset.BorderWidth = 2;            
+
+            blitzColorEnum.MoveNext();
+            blitzDataset.BorderColor = ColorUtil.FromDrawingColor(System.Drawing.Color.Gray);
+            blitzDataset.BackgroundColor = ColorUtil.FromDrawingColor(blitzColorEnum.Current);
+            blitzDataset.BorderWidth = 2;
+
+            dutchDataset.Label = ((IsGameOver && player.TotalScore == HighestScore) ? "👑 " : string.Empty) + player.Name + " Dutch";
+            blitzDataset.Label = ((IsGameOver && player.TotalScore == HighestScore) ? "👑 " : string.Empty) + player.Name + " Blitz";
+            dutchDataset.Stack = dutchDataset.Label;
+            blitzDataset.Stack = dutchDataset.Label;
+
+            for (int i = 0; i < totalRounds; i++)
+            {                
+                dutchDataset.Add(player.Scores[i].DutchCount.GetValueOrDefault(0));
+                blitzDataset.Add(player.Scores[i].BlitzCount.GetValueOrDefault(0) * -1);
+            }
+
+            _dutchConfig.Data.Datasets.Add(dutchDataset);
+            _dutchConfig.Data.Datasets.Add(blitzDataset);
+        }
+
+        Console.WriteLine("RefreshDutchGraph update chart");
+        //_dutchChart?.Update();
+        Console.WriteLine("RefreshDutchGraph end");
+    }
+
+    void RefreshScoreGraph()
+    {        
+        if (_scoreConfig == null)
+        {
+            _scoreConfig = new LineConfig()
+                {
+                    Options = new LineOptions
+                    {
+                        Responsive = true,
+                        Title = new OptionsTitle
+                        {
+                            Display = true,
+                            Text = "Scores"
+                        },
+                        Tooltips = new Tooltips
+                        {
+                            Mode = InteractionMode.Nearest,
+                            Intersect = true
+                        },
+                        Hover = new Hover
+                        {
+                            Mode = InteractionMode.Nearest,
+                            Intersect = true
+                        },
+                        Scales = new Scales
+                        {
+                            XAxes = new List<CartesianAxis>
+                    {
+                        new CategoryAxis
+                        {
+                            ScaleLabel = new ScaleLabel
+                            {
+                                LabelString = "Round #"
+                            }
+                        }
+                    },
+                            YAxes = new List<CartesianAxis>
+                    {
+                        new LinearCartesianAxis
+                        {
+                            ScaleLabel = new ScaleLabel
+                            {
+                                LabelString = "Score"
+                            }
+                        }
+                    }
+                        }
+                    },
+
+                };
+        }
+
+        // X Axis Labels
+        _scoreConfig.Data.Labels.Clear();
+        foreach (var label in System.Linq.Enumerable.Range(1, totalRounds).Select(item => item.ToString()))
+        {
+            _scoreConfig.Data.Labels.Add(label);
+        }
+
+        _scoreConfig.Data.Datasets.Clear();
+        var colorEnum = lightColors.GetEnumerator();
+        foreach (var player in players)
+        {
+            LineDataset<int> dataset = new LineDataset<int>();
+            dataset.Fill = FillingMode.Disabled;
+            colorEnum.MoveNext();
+            dataset.BorderColor = ColorUtil.FromDrawingColor(colorEnum.Current);
+
+            dataset.Label = ((IsGameOver && player.TotalScore == HighestScore) ? "👑 " : string.Empty) + player.Name;
+
+            for (int i = 0, sum = 0; i < totalRounds; i++)
+            {
+                sum += player.Scores[i].Total.GetValueOrDefault(0);
+                dataset.Add(sum);
+            }
+
+            _scoreConfig.Data.Datasets.Add(dataset);
+        }
+
+        _scoreChart?.Update();
+    }
+
+    void StoreScoreOffline()
+    {
+        try
+        {
+            var jsonString = JsonSerializer.Serialize(players.ToArray());
+            var totalRoundsJson = JsonSerializer.Serialize(totalRounds);
+            var targetJson = JsonSerializer.Serialize(targetScore);
+            var scoreCountStyleJson = JsonSerializer.Serialize(CurrScoreCountStyle);
+
+            localStorage.SetItemAsString(OfflineKey, jsonString);
+            localStorage.SetItemAsString(OfflineRoundsKey, totalRoundsJson);
+            localStorage.SetItemAsString(OfflineTargetKey, targetJson);
+            localStorage.SetItemAsString(OfflineScoreCountStyleKey, scoreCountStyleJson);
+
+        }
+        catch(Exception e)
+        {
+            Console.WriteLine(e.Message);
+        }
+    }
+
+    void ResetScores()
+    {
+        totalRounds = 1;
+
+        foreach(var player in players)
+        {
+            player.ResetScore();
+        }
+    }
+
+    void NewGame()
+    {
+        totalRounds = 1;
+
+        players.Clear();
+
+        AddPlayer("Player 1");
+        AddPlayer("Player 2");
+        AddPlayer("Player 3");
+        AddPlayer("Player 4");
+    }
+
+    void AddPlayer(string PlayerName)
+    {
+        var player = new Player()
+        {
+            Name = PlayerName,
+            Scores = new List<Score>()
+        };
+
+        // Create default scores for all the games previously played
+        player.Scores.AddRange(Enumerable.Repeat(new Score(), totalRounds));
+
+        players.Add(player);        
+    }
+
+    void MovePlayerUp(int idx)
+    {   
+        Console.WriteLine("Idx :" + idx);
+
+        var tempPlayer = players[idx];
+
+        Console.WriteLine("Moving Player " + tempPlayer.Name + " UP");
+
+        players.RemoveAt(idx);
+        players.Insert(idx - 1, tempPlayer);
+    }
+
+    void MovePlayerDown(int idx)
+    {
+        Console.WriteLine("Idx :" + idx);
+
+        var tempPlayer = players[idx];
+
+        Console.WriteLine("Moving Player " + tempPlayer.Name + " DOWN");
+
+        players.RemoveAt(idx);
+        players.Insert(idx + 1, tempPlayer);
+    }
+
+    void DeletePlayer(int idx)
+    {
+        Console.WriteLine("Idx :" + idx);
+
+        var tempPlayer = players[idx];
+
+        Console.WriteLine("Deleting Player " + tempPlayer.Name);
+
+        players.RemoveAt(idx);
+    }
+
+    void OnKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            AddPlayersFromInput();
+        }        
+    }
+
+    void AddPlayersFromInput()
+    {
+        var tempInput = playerNamesInputText;
+        playerNamesInputText = string.Empty;
+
+        Console.WriteLine("Input : \"" + tempInput + "\"");
+
+        var namesList = tempInput
+            .Split(",")
+            .Select(playerName =>
+            {
+                // Sanitize player names here
+                var temp = new string(playerName.Where(c => char.IsLetter(c) || char.IsNumber(c) || char.IsWhiteSpace(c)).ToArray());
+
+                // Replace multiple whitespaces with single space
+                Regex.Replace(temp, @"\s+", " ");
+
+                return temp;
+            })
+            .Where(playerName => !string.IsNullOrEmpty(playerName));
+
+        Console.WriteLine("Adding " + namesList.Count() + " players");
+
+        foreach (var playerName in namesList)
+        {
+            AddPlayer(playerName);
+        }
+    }
+
+    void AddRound()
+    {
+        foreach(var player in players)
+        {
+            player.Scores.Add(new Score());
+        }
+
+        totalRounds++;
+
+        Console.WriteLine(lastRowFirstInputTabIndex);
+
+        focusSwitchRequired = true;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {        
+        if (focusSwitchRequired)
+        {
+            Console.WriteLine("focusSwitchRequired : " + lastRowFirstInputTabIndex);
+
+            focusSwitchRequired = false;
+            jsDutchBlitzModule = jsDutchBlitzModule ?? await JSRuntime.InvokeAsync<IJSObjectReference>("import", DutchBlitzJSUrl);
+
+            await jsDutchBlitzModule.InvokeVoidAsync("FocusOnElementWithTabIndex", lastRowFirstInputTabIndex);            
+        }
+    }
+
+}
