@@ -1,0 +1,25 @@
+name: Publish As NuGet Package
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v1
+      with:
+        dotnet-version: 6.0.x
+    - name: Restore dependencies
+      run: dotnet restore 
+    - name: Build NuGet Package
+      run: dotnet build --configuration Release
+    - name: Publish NuGet Package to Github
+      run: dotnet nuget push ${{github.workspace}}/bin/Release/*.nupkg -s "https://nuget.pkg.github.com/roman015/index.json" -k ${{ secrets.GITHUB_TOKEN }}
