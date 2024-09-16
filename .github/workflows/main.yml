@@ -26,4 +26,4 @@ jobs:
     - name: Build NuGet Package
       run: dotnet build --configuration Release
     - name: Publish NuGet Package to Github
-      run: dotnet nuget push ${{github.workspace}}/bin/Release/*.nupkg -s "https://nuget.pkg.github.com/roman015/index.json" -k ${{ secrets.GITHUBPACKAGES_APIKEY }}
+      run: dotnet nuget push ${{github.workspace}}/bin/Release/*.nupkg -s "https://nuget.pkg.github.com/roman015-com/index.json" -k ${{ secrets.GITHUBPACKAGES_APIKEY }}
